@@ -1,0 +1,557 @@
+/*****************************************************************************************
+  task_ble.cpp
+ -------------------------------------
+  @ Project : AirQuant
+	@ Date : 2024-02-24
+  @ Author : Piquant
+*****************************************************************************************/
+
+#include <Arduino.h>
+//#include <esp_bt_main.h>
+//#include <esp_bt_device.h>
+
+#include "timer.h"
+#include "task.h"
+#include "system.h"
+#include "utils.h"
+#include "opmode.h"
+#include "ble_dev.h"
+#include "init.h"
+//#include "test.h"
+#include "print.h"
+
+
+
+/*--------------------------------------------------------------------------------------*/
+/*                DEFINITION                                                            */
+/*--------------------------------------------------------------------------------------*/
+bool g_bBleConnected = false;
+bool g_bGotBleMessage = false;
+int g_nSumIndex = 0;
+int g_nTotalMsgCount = 0;
+char g_sBleRcvMessage[300] = {0};
+
+volatile bool g_bFinishBle = false;
+
+#if 0
+// the callback handlers for this characteristic
+BLECharacteristicCallbacks *g_pCallbacks = NULL;
+// Instance for BLE Server.
+BLEServer *g_pServer = NULL;
+// Instance for BLE Service.
+BLEService *g_pService = NULL;
+// Create TX characteristic to send data from ESP32 to the outside.
+BLECharacteristic *g_pTxCharacteristic = NULL;
+// Create RX characteristic so that BLE can receive data from external client
+BLECharacteristic *g_pRxCharacteristic = NULL;
+// Instance for  Callback function for BLE connection or disconnection
+BLEServerCallbacks *g_pMyServerCallbacks = NULL;
+// Descriptor for Client Characteristic Configuration.
+BLEDescriptor *g_pDescriptor = NULL;
+#endif
+
+// Variable for the received data in a variable
+//std::string g_strRxBleData;
+
+uint32_t g_u32StartBle = 0; /* Time for BLE connection */
+/*--------------------------------------------------------------------------------------*/
+/*                Extern                                                                */
+/*--------------------------------------------------------------------------------------*/
+
+
+/*---------------------------------------------------------------------------------------
+    @brief : Connection status callback function for BLE
+    @param
+    @return
+----------------------------------------------------------------------------------------*/
+#if 0
+
+class MyServerCallbacks : public BLEServerCallbacks
+{
+
+   // Called when trying to connect
+   void onConnect(BLEServer *g_pServer)
+   {
+      g_bBleConnected = true;
+      g_u32StartBle = millis();
+      printk(LOG_ALWAYS, F("\n[BLE_MODE] g_u32StartBle(2)  = %u\n"), g_u32StartBle);
+   }
+   // Called when trying to disconnect
+   void onDisconnect(BLEServer *g_pServer)
+   {
+      g_bBleConnected = false;   
+      g_u32StartBle = false;
+      printk(LOG_ALWAYS, F("\n[BLE_MODE] onDisconnect() = %u\n"), g_u32StartBle);
+   }
+};
+#endif	 
+
+/*--------------------------------------------------------------------------------------*/
+/*                    class BLECharacteristicCallbacks                                  */
+/*--------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------
+    @brief : Callback function that receives data from other BLE
+             the ESP32 BLE in Arduino IDE actually only supports char arrays (not strings)
+             to set the values in the BLE characteristics:
+    @param
+    @return
+----------------------------------------------------------------------------------------*/
+#if 0
+
+class MyCallbacks : public BLECharacteristicCallbacks
+{
+  // Called when data is received from outside
+	void onWrite(BLECharacteristic *pCharacteristic)
+	{
+		bool bRst;
+		uint16_t u16ARGUMENT[SIZE_PACKET_ARGUMENT];
+
+		printk(LOG_DEBUG, F("\n[BLE_MODE] Start BLECharacteristicCallbacks\n"));
+
+		// Save the received data in a variable
+		g_strRxBleData = pCharacteristic->getValue();
+
+		// We can transmit and receive up to 20 bytes at a time via BLE.
+		if (g_strRxBleData.length() > 0)
+		{
+			bRst = bGetAllBleMessage();
+			printk(LOG_ERROR, F("bGetAllBleMessage(), bRst = %u\n"), bRst);
+
+			if(bRst != true)
+			{
+				printk(LOG_ERROR, F("resetESp32System()\n"));
+
+				g_u8SwReset = 0;
+
+				delay(100);				
+				((cSystem *)g_stInst.pSystem)->resetESp32System();			
+				return;				
+			}
+			if(g_bFinishBle==true)
+			{
+				printk(LOG_ERROR, F("g_bFinishBle = true\n"));
+			} 		
+		}
+
+	}
+};
+#endif	
+
+/*---------------------------------------------------------------------------------------
+  function : bGetBleState()
+    @brief    :
+    @param
+    @return
+----------------------------------------------------------------------------------------*/
+bool bGetBleState()
+{
+   return g_bBleConnected;
+}
+
+/*---------------------------------------------------------------------------------------
+  function : bGetAllBleMessage()
+    @brief    :
+      BLE는 한번에 최대 20byte 까지 송 수신
+
+        Byte 1 - cmd, byte[0] = 0x03.
+        Byte 2 - Recognization: 마지막 패킷이면 0xEE, 제일 처음 패킷이면 0xDD, 그렇지 않으면 0x01.
+        Byte 3 - 18 바이트 (data)
+    @param
+    @return
+----------------------------------------------------------------------------------------*/
+bool bGetAllBleMessage()
+{
+#if 0
+	// const char *pRxData = g_strRxBleData.c_str();
+	char sRxDataTemp[300];
+	int nIndex = 0;
+	static uint8_t _u8Empty = 0;
+	static uint8_t _u8NoSsid = 0;
+	static uint8_t _u8NoPw = 0;   
+
+	printk(LOG_WARN, F("BLE RX : %s\n"), (const char *)g_strRxBleData.c_str());
+
+	char returnOk[20] = "OK";
+	char returnError[20] = "Error";
+	char returnFinish[20] = "Success";
+
+	strcpy(sRxDataTemp, g_strRxBleData.c_str());
+
+	cUtils::strtokenizer(sRxDataTemp, ",");
+
+	if (g_strRxBleData.find("PAQ") != std::string::npos)
+	{
+		g_nTotalMsgCount = atoi(cUtils::m_stPcParse.d[1]); // atoi(sArr[1]);
+		g_bGotBleMessage = true;
+		printk(LOG_DEBUG, F("g_nTotalMsgCount = %d, %s\n"), g_nTotalMsgCount, g_strRxBleData.c_str());
+	}
+	else if (g_strRxBleData.find("END") != std::string::npos)
+	{
+		g_bFinishBle = true;
+	}
+	else
+	{
+		uint8_t u8Len = 0;
+		int nTotal = atoi(cUtils::m_stPcParse.d[0]);
+		nIndex = atoi(cUtils::m_stPcParse.d[1]);
+
+		if (g_bGotBleMessage != true)
+		{
+			printk(LOG_ERROR, F("<Error> g_bGotBleMessage = false, %s\n"), (const char *)g_strRxBleData.c_str());
+			return false;
+		}
+		if (g_nTotalMsgCount != nTotal)
+		{
+			printk(LOG_ERROR, F("<Error> %d, %d\n"), nTotal);
+			return false;
+		}
+
+		g_nSumIndex += (nIndex + 1);
+
+		if (nIndex == 0)
+		{
+			u8Len = strlen(cUtils::m_stPcParse.d[2]);
+			if(strlen(cUtils::m_stPcParse.d[2]) == 0) 
+			{
+				//_u8Empty++; /* In case of ETH, SSID is null */
+				_u8NoSsid = 1;
+				sprintf(cUtils::m_stPcParse.d[2], "%s", "NONE_SSID");
+				Serial.printf("(0) _u8NoSsid = %u\n", _u8NoSsid);
+			}
+			strcat(g_sBleRcvMessage, cUtils::m_stPcParse.d[2]);
+			//Serial.printf("(0) u8Len = %u, %02x, %02x, %02x, %02x, %02x\n", u8Len, cUtils::m_stPcParse.d[2][0], cUtils::m_stPcParse.d[2][1], cUtils::m_stPcParse.d[2][2], cUtils::m_stPcParse.d[2][3], cUtils::m_stPcParse.d[2][4]);
+		}
+		else if (nIndex == 1)
+		{
+			u8Len = strlen(cUtils::m_stPcParse.d[2]);      
+			if(strlen(cUtils::m_stPcParse.d[2]) == 0)
+			{
+				//_u8Empty++; /* In case of ETH, PW is null */
+				_u8NoPw = 1;      		
+				sprintf(cUtils::m_stPcParse.d[2], "%s", "NONE_PW");       	 	
+				Serial.printf("(1) _u8NoPw = %u\n", _u8NoPw);      		
+			}
+			strcat(g_sBleRcvMessage, ",");
+			strcat(g_sBleRcvMessage, cUtils::m_stPcParse.d[2]);
+			//Serial.printf("(1) u8Len = %u, %02x, %02x, %02x, %02x, %02x\n", u8Len, cUtils::m_stPcParse.d[2][0], cUtils::m_stPcParse.d[2][1], cUtils::m_stPcParse.d[2][2], cUtils::m_stPcParse.d[2][3], cUtils::m_stPcParse.d[2][4]);
+		}
+		else if (nIndex == 2)
+		{
+			u8Len = strlen(cUtils::m_stPcParse.d[2]); 	  
+
+			/* [2]ETH(0)/WiFi(1), [3]DY(0)/ST(1) */
+			if((strlen(cUtils::m_stPcParse.d[2]) == 0)||(strlen(cUtils::m_stPcParse.d[3]) == 0))
+			{
+				Serial.printf("(2) _u8Empty = %u(0x%x,0x%x)\n", _u8Empty, cUtils::m_stPcParse.d[2], cUtils::m_stPcParse.d[3]);			
+				sprintf(cUtils::m_stPcParse.d[2], "%s", "NONE_NT");       	 	
+				sprintf(cUtils::m_stPcParse.d[3], "%s", "NONE_IT");       	 	
+				_u8Empty++;
+			}
+			strcat(g_sBleRcvMessage, ",");
+			strcat(g_sBleRcvMessage, cUtils::m_stPcParse.d[2]);
+			strcat(g_sBleRcvMessage, ",");
+			strcat(g_sBleRcvMessage, cUtils::m_stPcParse.d[3]);
+
+			if(strncmp(cUtils::m_stPcParse.d[2],"WiFi", sizeof("WiFi")) == 0)
+			{
+				if(_u8NoSsid == 1)_u8Empty++;
+				if(_u8NoPw == 1)_u8Empty++;					 
+			}
+			//Serial.printf("(2) u8Len = %u, %02x, %02x, %02x, %02x, %02x\n", u8Len, cUtils::m_stPcParse.d[2][0], cUtils::m_stPcParse.d[2][1], cUtils::m_stPcParse.d[2][2], cUtils::m_stPcParse.d[2][3], cUtils::m_stPcParse.d[2][4]);
+		}
+		else if (nIndex > 2)
+		{
+			u8Len = strlen(cUtils::m_stPcParse.d[2]);            
+			if(strlen(cUtils::m_stPcParse.d[2]) == 0) 
+			{
+				Serial.printf("(3) _u8Empty = %u\n", _u8Empty);      					
+				sprintf(cUtils::m_stPcParse.d[2], "%s_%u", "NONE", nIndex);       	 	       	 	
+				_u8Empty++;
+			}
+			strcat(g_sBleRcvMessage, ",");
+			strcat(g_sBleRcvMessage, cUtils::m_stPcParse.d[2]);
+			//Serial.printf("(%u) u8Len = %u, %02x, %02x, %02x, %02x, %02x\n", nIndex, u8Len, cUtils::m_stPcParse.d[2][0], cUtils::m_stPcParse.d[2][1], cUtils::m_stPcParse.d[2][2], cUtils::m_stPcParse.d[2][3], cUtils::m_stPcParse.d[2][4]);
+		}
+		printk(LOG_WARN, F("[%d:%d] %s, %d, %u\n"), g_nTotalMsgCount, nIndex, g_sBleRcvMessage, g_nSumIndex, _u8Empty);
+		Serial.printf("g_sBleRcvMessage = %s\n", g_sBleRcvMessage); 			
+	}
+
+	if (g_bGotBleMessage)
+	{
+		if (g_bFinishBle)
+		{
+			delay(20);		
+			_u8NoSsid = 0;
+			_u8NoPw = 0;
+			Serial.printf("Finish : g_sBleRcvMessage = %s\n", g_sBleRcvMessage);  			
+			if(_u8Empty != 0) 
+			{
+				g_pTxCharacteristic->setValue(returnError);
+				g_pTxCharacteristic->notify();
+				Serial.printf("<Error>[TX] _u8Empty = %u\n", _u8Empty);		
+				_u8Empty = 0;			
+			}
+			else 
+			{
+				g_pTxCharacteristic->setValue(returnFinish);
+				g_pTxCharacteristic->notify();      		
+				Serial.printf("[TX] Finish : %s\n", "OK");
+
+				delay(10);
+
+				g_pTxCharacteristic->setValue(returnFinish);
+				g_pTxCharacteristic->notify();
+				Serial.printf("[TX] Finish : %s\n", "OK");
+
+				bCheckBleRxData();
+				// exitBle();
+
+				g_pTxCharacteristic->setValue(returnError);
+				g_pTxCharacteristic->notify();
+				Serial.printf("[TX] Finish : %s\n", "OK");
+				
+				//((cSystem *)g_stInst.pSystem)->resetESp32System();
+				return true;
+			}			
+	  }
+	  else
+	  {
+	     g_pTxCharacteristic->setValue(returnOk);
+	    g_pTxCharacteristic->notify();         
+	     Serial.printf("[TX] %s\n", "OK");
+	  }
+	  delay(10);
+	}
+	else
+	{
+		g_pTxCharacteristic->setValue(returnError);
+		g_pTxCharacteristic->notify();
+		Serial.printf("<Error>[TX]g_bGotBleMessage = false\n");
+		return false;
+	}
+#endif	
+  return true;         
+}
+
+/*---------------------------------------------------------------------------------------
+  function : setInitBle()
+    @brief    :
+    @param
+    @return
+----------------------------------------------------------------------------------------*/
+void setInitBle()
+{
+	printk(LOG_TRACE, F("setInitBle()\n"));
+
+#if 0
+	//BLEDevice::init(g_stBleCfg.stEeprom.stIpConfig.sUDID);
+	BLEDevice::init("PiQuant_DEV");
+
+	g_pServer = BLEDevice::createServer();
+
+	/* Register Callback function for BLE connection or disconnection */
+	g_pMyServerCallbacks = new MyServerCallbacks();
+	g_pServer->setCallbacks(g_pMyServerCallbacks);
+
+	BLEService *g_pService = g_pServer->createService(SERVICE_UUID);
+
+	//Notify만 가능하게 함
+	g_pTxCharacteristic = g_pService->createCharacteristic(
+	   CHARACTERISTIC_UUID_TX,
+	   BLECharacteristic::PROPERTY_NOTIFY);
+	g_pDescriptor = new BLE2902();
+	g_pTxCharacteristic->addDescriptor(g_pDescriptor);
+
+	// Client가 ESP32로 보내는 캐릭터리스틱 생성 (Rx), write 속성 활성
+	g_pRxCharacteristic = g_pService->createCharacteristic(
+	   CHARACTERISTIC_UUID_RX,
+	   BLECharacteristic::PROPERTY_WRITE_NR);
+
+	// pRxCharacteristic에 client가 보낸 데이터를 처리할 콜백 함수 등록
+	g_pCallbacks = new MyCallbacks();
+	g_pRxCharacteristic->setCallbacks(g_pCallbacks);
+
+	g_pService->start();                  // Start the service (아직 외부에 표시가 안됨)
+	g_pServer->getAdvertising()->start(); // Start advertising (이때 모바일에서 스캔하면 표시됨)
+#endif
+
+	printk(LOG_TRACE, F("[BLE] Waiting a BLE client connection to notify...\n"));
+}
+
+/*---------------------------------------------------------------------------------------
+  function : exitBle()
+    @brief    :
+    @param
+    @return
+----------------------------------------------------------------------------------------*/
+void exitBle()
+{
+   printk(LOG_DEBUG, F("[BLE]exitBle()\n"));
+#if 0
+   g_pServer->removeService(g_pService); // with g_pService->stop();
+   printk(LOG_ALWAYS, F("[BLE] g_pServer->removeService\n"));
+   BLEDevice::deinit();
+   printk(LOG_ALWAYS, F("[BLE] BLEDevice::deinit()\n"));
+
+   if (g_pCallbacks)
+   {
+      delete g_pCallbacks;
+      g_pCallbacks = NULL;
+   }
+   if (g_pService)
+   {
+      delete g_pService;
+      g_pService = NULL;
+   }
+   if (g_pServer)
+   {
+      delete g_pServer;
+      g_pServer = NULL;
+   }
+   if (g_pTxCharacteristic)
+   {
+      delete g_pTxCharacteristic;
+      g_pTxCharacteristic = NULL;
+   }
+   if (g_pRxCharacteristic)
+   {
+      delete g_pRxCharacteristic;
+      g_pRxCharacteristic = NULL;
+   }
+   if (g_pMyServerCallbacks)
+   {
+      delete g_pMyServerCallbacks;
+      g_pMyServerCallbacks = NULL;
+   }
+   if (g_pDescriptor)
+   {
+      delete g_pDescriptor;
+      g_pDescriptor = NULL;
+   }
+#endif	 
+}
+
+/*---------------------------------------------------------------------------------------
+  function : nParseBleMessage()
+    @brief    :
+			[BLE]g_sBleRcvMessage Size = 79, g_sBleRcvMessage = NONE_SSID,NONE_PW,ETH,ST,192.168.0.12,192.168.0.1,255.255.255.0,8.8.8.8,8.8.4.4
+			[BLE]SSID = NONE_SSID
+			[BLE]PW = NONE_PW
+			[BLE]NET_TYPE = ETH
+			[BLE]IP_TYPE = ST
+			[BLE]IpV4 = 192.168.0.12
+			[BLE]GW = 192.168.0.1
+			[BLE]SubMask = 255.255.255.0
+			[BLE]DNS1 = 8.8.8.8
+			[BLE]DNS2 = 8.8.4.4    
+    @param
+    @return
+----------------------------------------------------------------------------------------*/
+bool bCheckBleRxData()
+{
+   bool bRst = true;
+
+#if 0
+
+   char rxCharArry[350];
+
+   strcpy(rxCharArry, g_sBleRcvMessage);
+   cUtils::strtokenizer(rxCharArry, ",");
+
+	if(strlen(cUtils::m_stPcParse.d[9])==0) sprintf(cUtils::m_stPcParse.d[9], "%s", "0");
+   printk(LOG_ALWAYS, F("[BLE]g_sBleRcvMessage Size = %d, g_sBleRcvMessage = %s\n"), strlen(g_sBleRcvMessage), g_sBleRcvMessage);
+   
+   // noInterrupts();
+   if (strncmp(cUtils::m_stPcParse.d[2], "WiFi", sizeof("WiFi")) == 0)
+   {
+      g_stBleCfg.stEeprom.stIpConfig.u8NetType = WIFI_NET;                        // sArr[2]);
+      strcpy(g_stBleCfg.stEeprom.stIpConfig.sSsid, cUtils::m_stPcParse.d[0]);     // sArr[0]);
+      if (strncmp(cUtils::m_stPcParse.d[1], "NONE", sizeof("NONE")) == 0)            //LGW
+      {
+         strcpy(g_stBleCfg.stEeprom.stIpConfig.sPassword, "");                    // sArr[1]);
+      }
+      else
+      {
+         strcpy(g_stBleCfg.stEeprom.stIpConfig.sPassword, cUtils::m_stPcParse.d[1]); // sArr[1]);
+      }   
+   }    
+   else
+   {
+		strcpy(g_stBleCfg.stEeprom.stIpConfig.sSsid, "NONE"); 	 // sArr[0]);
+		strcpy(g_stBleCfg.stEeprom.stIpConfig.sPassword, "NONE"); // sArr[1]);
+      g_stBleCfg.stEeprom.stIpConfig.u8NetType = ETH_NET;       // sArr[2]);
+   }
+
+   if (strncmp(cUtils::m_stPcParse.d[3], "ST", sizeof("ST")) == 0)
+   {
+	   g_stBleCfg.stEeprom.stIpConfig.u8IpType = ST_IPTYPE; /* 1 */  
+	}  
+	else
+	{
+	   g_stBleCfg.stEeprom.stIpConfig.u8IpType = DY_IPTYPE; /* 0 */  	
+	}
+
+   if (g_stBleCfg.stEeprom.stIpConfig.u8IpType == ST_IPTYPE) // ST_IPTYPE (sArr[4] == PublicWiFi); 
+   {
+      strcpy(g_stBleCfg.stEeprom.stIpConfig.sIpV4, cUtils::m_stPcParse.d[4]);    // sArr[4]);
+      uint8_t u8d = atoi(cUtils::m_stPcParse.d[9]);                              
+      if(u8d == PUBLIC_WIFI) g_stBleCfg.stEeprom.stIpConfig.u8PublicWiFi = PUBLIC_WIFI;
+      else g_stBleCfg.stEeprom.stIpConfig.u8PublicWiFi = OPEN_WIFI;
+	}  
+	else // ST_IPTYPE (sArr[9] == PublicWiFi); 
+	{
+      uint8_t u8d = atoi(cUtils::m_stPcParse.d[4]);                              
+      if(u8d == PUBLIC_WIFI) g_stBleCfg.stEeprom.stIpConfig.u8PublicWiFi = PUBLIC_WIFI;
+      else g_stBleCfg.stEeprom.stIpConfig.u8PublicWiFi = OPEN_WIFI;
+	}
+
+	
+   strcpy(g_stBleCfg.stEeprom.stIpConfig.sIpV4, cUtils::m_stPcParse.d[4]);    // sArr[4]);
+   strcpy(g_stBleCfg.stEeprom.stIpConfig.sGateway, cUtils::m_stPcParse.d[5]); // sArr[5]);
+   strcpy(g_stBleCfg.stEeprom.stIpConfig.sSubMask, cUtils::m_stPcParse.d[6]); // sArr[6]);
+   strcpy(g_stBleCfg.stEeprom.stIpConfig.sDns1, cUtils::m_stPcParse.d[7]);    // sArr[7]);
+   strcpy(g_stBleCfg.stEeprom.stIpConfig.sDns2, cUtils::m_stPcParse.d[8]);    // sArr[8]);
+
+   // interrupts();
+#endif
+
+   memset(g_sBleRcvMessage, 0x0, sizeof(g_sBleRcvMessage));
+
+   return bRst;
+}
+
+/*---------------------------------------------------------------------------------------
+ function : bGetBleMac()
+   @brief    :
+   @param
+   @return
+----------------------------------------------------------------------------------------*/
+bool bGetBleMac(bool bShow)
+{
+#if 0
+   int nZero = 0;
+
+   esp_read_mac(g_stBleCfg.u8Mac, ESP_MAC_BT);
+
+   if (bShow)
+   {
+      printk(LOG_INFO, F("BLE_MAC = (%02x,%02x,%02x,%02x,%02x,%02x)\n"), g_stBleCfg.u8Mac[0], g_stBleCfg.u8Mac[1],
+             g_stBleCfg.u8Mac[2], g_stBleCfg.u8Mac[3], g_stBleCfg.u8Mac[4], g_stBleCfg.u8Mac[5]);
+
+      printk(LOG_INFO, F("\n-----------------------------\n"));
+   }
+   for (uint8_t u8Index = 0; u8Index < SIZE_MACADDR; u8Index++)
+   {
+      if (g_stBleCfg.u8Mac[u8Index] == 0)
+         nZero++;
+   }
+   if (nZero < 3)
+      return true;
+
+   return false;
+#else
+	return true;
+#endif
+}
+

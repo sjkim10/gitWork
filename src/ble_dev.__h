@@ -1,0 +1,95 @@
+/*****************************************************************************************
+ble_dev.h
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+@ Project : AirQuant
+@ Date : 2024-02-24
+@ Author : Piquant
+*****************************************************************************************/
+
+#ifndef _TASK_BLE_DEV_TEST_H_
+#define _TASK_BLE_DEV_TEST_H_
+
+#include "define.h"
+#if 0
+#include <BLEDevice.h>
+#include <BLEUtils.h>
+#include <BLEServer.h>
+#include <BLE2902.h>
+#endif
+#include "TemplateSingleTon.h"
+#include "config.h"
+
+/*--------------------------------------------------------------------------------------*/
+/*                DEFINITION                                                            */
+/*--------------------------------------------------------------------------------------*/
+#define SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E" // UART service UUID
+#define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
+#define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
+
+#define SIZE_MANUFACNAME  6
+#define SIZE_DEVNAME      6
+#define SIZE_ADVDATA      15
+
+/*--------------------------------------------------------------------------------------*/
+/*                Extern                                                                */
+/*--------------------------------------------------------------------------------------*/
+
+/* 27 : The Maximum Length of Data you can Include in a BLE Advertising Packet */
+typedef struct _stAdvData_t
+{
+   char sManFacName[SIZE_DEVNAME]; //6
+   char sDevName[SIZE_DEVNAME];    //6 
+   char sAdvData[SIZE_ADVDATA];    //15
+	 uint32_t u32Data;               //4 
+} stAdvData_t;
+extern stAdvData_t g_stAdvData; 
+
+typedef struct _stBleConfig_t
+{
+  uint8_t u8RegDev;   /* 1 : registered */
+	uint16_t u16Period; /* msec */
+	uint8_t u8Mac[SIZE_MACADDR];
+	uint8_t u8Etc[4];	  /* etc */ 
+	
+} stBleConfig_t;
+extern stBleConfig_t g_stBleCfg; 
+
+
+
+/*--------------------------------------------------------------------------------------*/
+/*                Extern                                                                */
+/*--------------------------------------------------------------------------------------*/
+extern bool g_bBleConnected;
+//extern std::string g_strRxBleData;
+
+#if 0
+extern BLEServer *g_pServer;
+extern BLECharacteristic *g_pTxCharacteristic;
+extern BLECharacteristic *g_pRxCharacteristic;
+extern BLECharacteristicCallbacks *g_pCallbacks;
+extern BLEService *g_pService;
+extern BLEServerCallbacks *g_pMyServerCallbacks;
+extern BLEDescriptor *g_pDescriptor;
+#endif
+
+extern volatile bool g_bFinishBle;
+
+
+extern uint32_t g_u32StartBle;/* Time for BLE connection */
+
+/*--------------------------------------------------------------------------------------*/
+/*                Function                                                              */
+/*--------------------------------------------------------------------------------------*/
+bool bGetBleState();
+bool bGetBleMac(bool bShow);
+
+void setInitBle();
+void exitBle();
+bool bGetAllBleMessage();
+bool bCheckBleRxData();
+
+
+
+#endif /* _TASK_BLE_DEV_TEST_H_ */
+
