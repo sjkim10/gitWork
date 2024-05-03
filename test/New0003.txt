@@ -1,0 +1,93 @@
+#if 0
+#include <Arduino.h>
+
+// put function declarations here:
+int myFunction(int, int);
+
+void setup() {
+  // put your setup code here, to run once:
+  int result = myFunction(2, 3);
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+}
+
+// put function definitions here:
+int myFunction(int x, int y) {
+  return x + y;
+}
+
+#else
+
+#include <ArduinoBLE.h>
+
+   
+uint8_t g_mData[8] = {119,0,98,114,105,97,110,115};   
+typedef struct _stUserData_st
+{
+   uint16_t u16DevId;
+	 char sData;
+}stUserData_st;
+stUserData_st g_stUserData_st;
+
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial);
+
+  // begin initialization
+  if (!BLE.begin()) {
+    Serial.println("starting Bluetooth® Low Energy failed!");
+
+    while (1);
+  }
+
+  // set advertised local name and device name
+  BLE.setLocalName("MyOwnBLE");
+  BLE.setDeviceName("MyOwnBLE");
+
+  BLE.setManufacturerData(g_mData, sizeof(g_mData));
+
+  BLE.setAdvertisingInterval(320*3); // 200 * 0.625 ms  
+  // start advertising
+  BLE.advertise();
+
+  Serial.println("BLE Peripheral");
+}
+
+
+
+void loop() {
+  char sSensor[50];
+  // listen for BLE peripherals to connect:
+  BLEDevice central = BLE.central();
+
+  // if a central is connected to peripheral:
+  if (central) {
+    Serial.print("Connected to central: ");
+    // print the central's MAC address:
+    Serial.println(central.address());
+    
+    // when the central disconnects, print it out:
+    Serial.print(F("Disconnected from central: "));
+    Serial.println(central.address());
+  }
+  for(int i = 0; i < 8; i++) g_mData[i] += 1;
+   Serial.println(g_mData[0], HEX);
+
+#if 1
+   BLE.stopAdvertise();
+   BLE.setManufacturerData(g_mData, sizeof(g_mData));
+   // start advertising
+   BLE.advertise();
+   sprintf(sSensor, "%x, %x, %x", g_mData[0], g_mData[1], g_mData[2]);
+   Serial.println(sSensor);
+
+  delay(100);
+#endif  
+
+}
+
+#endif
+
